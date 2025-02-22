@@ -1,10 +1,8 @@
-import os
 from PIL import Image, UnidentifiedImageError, ExifTags
 from PIL.ExifTags import TAGS
 from datetime import datetime, timedelta
 from pathlib import Path
 import shutil
-import threading
 import time
 
 """
@@ -36,28 +34,29 @@ def image_metadata_extractor(image: str):
 def video_metadata_extractor():
     pass
 
-def handle_unknown_files(file_path, file):
+def handle_unknown_files(file, file_path):
     """ Handle files with unknown dates or formats """
-    unknown_dir = os.path.join(parent_dir, "Unknown files")
+    unknown_dir = Path.joinpath(parent_dir, "Unknown files")
     
     # Skip makedir if dir exist
-    os.makedirs(unknown_dir, exist_ok=True)
-    file_to_be_moved_path = os.path.join(unknown_dir, file)
+    Path.mkdir(unknown_dir, exist_ok=True)
+    file_to_be_moved_path = Path.joinpath(unknown_dir, file)
     
-    if not os.path.exists(file_to_be_moved_path):
-        shutil.copy(file_path, unknown_dir)
+    if not Path.exists(file_to_be_moved_path):
+        # shutil.copy2(file_path, unknown_dir)
+        pass
 
-def move_file_to_year_folder(image_date_obj, file_path, file):
+def move_file_to_year_folder(image_date_obj, file, file_path):
     """ Create folders and move the file to suitable folder """
     if isinstance(image_date_obj, datetime):
-        sorted_image_folders = os.path.join(parent_dir, str(image_date_obj.year))
+        sorted_image_folders = Path.joinpath(parent_dir, str(image_date_obj.year))
 
         # Skip makedir if dir exist
-        os.makedirs(sorted_image_folders, exist_ok=True)
-        file_to_be_moved_path = os.path.join(sorted_image_folders, file)
+        Path.mkdir(sorted_image_folders, exist_ok=True)
+        file_to_be_moved_path = Path.joinpath(sorted_image_folders, file)
         
-        if not os.path.exists(file_to_be_moved_path):
-            # shutil.copy(file_path, sorted_image_folders)
+        if not Path.exists(file_to_be_moved_path):
+            # shutil.copy2(file_path, sorted_image_folders)
             pass
 
 def main():
@@ -65,15 +64,15 @@ def main():
     number_of_files: int = 0
     number_of_files_transferred: int = 0
     
-    for dirpath, _, filenames in os.walk(image_src_dir, topdown=True):
-        for file in filenames:
+    for file in image_src_dir.rglob("*"):
+        if file.is_file():
             try:
-                file_path: str = os.path.join(dirpath, file)
+                file_path = Path.joinpath(Path(file))
                 number_of_files += 1
                 
                 with Image.open(file_path) as image:
                     if image.format in image_formats:
-                        image_date_obj: str = image_metadata_extractor(image)
+                        image_date_obj: datetime = image_metadata_extractor(image)
                         move_file_to_year_folder(image_date_obj, file_path, file)
                 
                 number_of_files_transferred += 1
@@ -89,24 +88,11 @@ def main():
 
 if __name__ == "__main__":
     start_time = time.perf_counter()
-    # t1 = threading.Thread(target=main)
-    # t2 = threading.Thread(target=main)
-    # t3 = threading.Thread(target=main)
-    # t4 = threading.Thread(target=main)
     
-    # t1.start()
-    # t2.start()
-    # t3.start()
-    # t4.start()
-    
-    # t1.join()
-    # t2.join()
-    # t3.join()
-    # t4.join()
-    
-    for i in range(16):
-        ti = threading.Thread(target=main)
+    main()
     
     end_time = time.perf_counter()
     
-    print(f"Total execution time: {end_time - start_time} seconds")
+    total_time = end_time - start_time
+    
+    print(f"Total execution time: {total_time:2f} seconds")
