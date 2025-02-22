@@ -5,28 +5,26 @@ from pathlib import Path
 import shutil
 import time
 
-"""
-Things to consider:
-
-1. Screen shots are not dealt with properly. They are sent to the unknown filder.
-2. Videos are not sorted yet.
-
-"""
-
 image_src_dir = Path(r"C:\Users\herma\Desktop\Copy")
 parent_dir = Path(image_src_dir)
 
 image_formats = list(Image.registered_extensions().values())
 
-def image_metadata_extractor(image: str):
+def image_metadata_extractor(file_path):
     """ Verify file is an image and extract the dates. Convert the str date object to an datetime object """
     
-    # Convert TAGS to human readable names        
-    image_exifdata = image.getexif()
+    with Image.open(file_path) as image:
+        if image.format in image_formats:
+            # Convert TAGS to human readable names        
+            image_exifdata = image.getexif()
     
-    if image_exifdata:
-        decoded_exif = {TAGS.get(tag, tag): value for tag, value in image_exifdata.items()}        
-        date_taken = decoded_exif.get("DateTime", decoded_exif.get("DateTimeOriginal"))
+            if image_exifdata:
+                decoded_exif = {TAGS.get(tag, tag): value for tag, value in image_exifdata.items()}        
+                date_taken = decoded_exif.get("DateTime", decoded_exif.get("DateTimeOriginal"))
+            else:
+                # For e.g screen shots that does not have exif data
+                mod_time = file_path.stat().st_mtime
+                date_taken = datetime.fromtimestamp(mod_time)
 
     if date_taken:
         return datetime.strptime(date_taken, "%Y:%m:%d %H:%M:%S")
@@ -43,7 +41,7 @@ def handle_unknown_files(file, file_path):
     file_to_be_moved_path = Path.joinpath(unknown_dir, file)
     
     if not Path.exists(file_to_be_moved_path):
-        # shutil.copy2(file_path, unknown_dir)
+        # shutil.move(file_path, unknown_dir)
         pass
 
 def move_file_to_year_folder(image_date_obj, file, file_path):
@@ -56,7 +54,7 @@ def move_file_to_year_folder(image_date_obj, file, file_path):
         file_to_be_moved_path = Path.joinpath(sorted_image_folders, file)
         
         if not Path.exists(file_to_be_moved_path):
-            # shutil.copy2(file_path, sorted_image_folders)
+            # shutil.move(file_path, sorted_image_folders)
             pass
 
 def main():
@@ -70,10 +68,8 @@ def main():
                 file_path = Path.joinpath(Path(file))
                 number_of_files += 1
                 
-                with Image.open(file_path) as image:
-                    if image.format in image_formats:
-                        image_date_obj: datetime = image_metadata_extractor(image)
-                        move_file_to_year_folder(image_date_obj, file_path, file)
+                image_date_obj: datetime = image_metadata_extractor(file_path)
+                move_file_to_year_folder(image_date_obj, file_path, file)
                 
                 number_of_files_transferred += 1
             except UnidentifiedImageError:
