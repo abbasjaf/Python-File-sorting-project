@@ -6,9 +6,13 @@ import shutil
 import time
 import mimetypes
 import magic
+from mutagen import File
+from mutagen import MutagenError
+from concurrent.futures import ThreadPoolExecutor
 
 parent_dir = Path(r"C:\Users\herma\Desktop\Copy")
-video_mime = magic.Magic(mime=True, keep_going=True)
+magic_mime_type = magic.Magic(mime=True)
+
 video_mime_types = [
     "video/mp4",         # MP4 (MPEG-4 Part 14)
     "video/x-msvideo",   # AVI (Microsoft Audio Video Interleave)
@@ -30,11 +34,40 @@ video_mime_types = [
     "video/x-xvid",      # Xvid Video
     "application/vnd.rn-realmedia", # RM (RealMedia)
 ]
-image_formats = list(map(str.lower, Image.registered_extensions().values()))
-number_of_files_transferred: int = 0
-print(image_formats)
+mutagen_supported_audio_formats = [
+    "mp3",   # MP3 (MPEG Audio)
+    "flac",  # FLAC (Free Lossless Audio Codec)
+    "ogg",   # OGG Vorbis
+    "opus",  # Opus (Next-generation OGG)
+    "mp4",   # MP4 (AAC, ALAC, MPEG-4)
+    "m4a",   # M4A (Apple AAC/ALAC)
+    "m4b",   # M4B (Audiobooks, MPEG-4)
+    "m4p",   # M4P (Protected AAC)
+    "asf",   # Advanced Systems Format (ASF) (WMA, WMV)
+    "wma",   # Windows Media Audio
+    "wav",   # WAV (RIFF)
+    "aiff",  # AIFF (Apple)
+    "ape",   # APE (Monkey’s Audio)
+    "wv",    # WavPack
+    "dsf",   # DSF (DSD Stream File)
+    "dff",   # DFF (DSD Interchange File)
+    "spx",   # Speex
+    "tta",   # True Audio
+    "ac3",   # AC3 (Dolby Digital)
+    "mpc",   # Musepack
+    "au",    # AU (Sun Audio)
+]
 
-def image_metadata_extractor(file_source, image):
+image_formats = list(map(str.lower, Image.registered_extensions().values()))
+image_formats.append("jpg")
+video_formats = [item.split("/")[1] for item in video_mime_types]
+audio_mime_types = ["audio/" + item for item in mutagen_supported_audio_formats]
+
+number_of_files_transferred: int = 0
+number_of_unknown_files: int = 0
+
+
+def image_metadata_extractor(source_file, image):
     """ Verify file is an image and extract the dates. Convert the str date object to an datetime object """
     
     image_exifdata = image.getexif()
@@ -43,23 +76,29 @@ def image_metadata_extractor(file_source, image):
         decoded_exif = {TAGS.get(tag, tag): value for tag, value in image_exifdata.items()}        
         date_taken = decoded_exif.get("DateTime", decoded_exif.get("DateTimeOriginal"))
         
-        return datetime.strptime(date_taken, "%Y:%m:%d %H:%M:%S")
+        if date_taken:
+            return datetime.strptime(date_taken, "%Y:%m:%d %H:%M:%S")
     else:
         # For e.g screen shots that does not have exif data
-        mod_time = file_source.stat().st_mtime
+        mod_time = source_file.stat().st_mtime
         date_taken = datetime.fromtimestamp(mod_time)
         
         if date_taken:
             return date_taken
 
-
-def video_metadata_extractor(file_source):
-    mod_time = file_source.stat().st_mtime
+def video_metadata_extractor(source_file):
+    mod_time = source_file.stat().st_mtime
     date_taken = datetime.fromtimestamp(mod_time)
     
     return date_taken
 
-def handle_unknown_files(file, file_source):
+def audio_metadata_extractor(source_file):
+    mod_time = source_file.stat().st_mtime
+    date_taken = datetime.fromtimestamp(mod_time)
+    
+    return date_taken
+
+def handle_unknown_files(file, source_file):
     """ Handle files with unknown dates or formats """
     # Unknown file folder
     unknown_dir = parent_dir / "Unknown files"
@@ -68,14 +107,12 @@ def handle_unknown_files(file, file_source):
     unknown_dir.mkdir(exist_ok=True)
     file_destination = unknown_dir / file.name
     
-    if file_destination.exists():
-        global number_of_files_transferred
-        number_of_files_transferred += 1
-    
     if not file_destination.exists():
-        shutil.copy2(file_source, unknown_dir)
+        shutil.copy2(source_file, unknown_dir)
+        global number_of_unknown_files
+        number_of_unknown_files += 1
 
-def move_file_to_year_folder(file_date_obj, file, file_source):
+def move_file_to_year_folder(file, source_file, file_date_obj):
     """ Create folders and move the file to suitable folder """
     if isinstance(file_date_obj, datetime):
         # Create a dir based on file ctime
@@ -86,39 +123,48 @@ def move_file_to_year_folder(file_date_obj, file, file_source):
         # Path to filed that is being moved
         file_destination = sorted_image_folders / file.name
         
-        if file_destination.exists():
+        if not file_destination.exists():
+            shutil.copy2(source_file, sorted_image_folders)
             global number_of_files_transferred
             number_of_files_transferred += 1
-        
-        if not file_destination.exists():
-            shutil.copy2(file_source, sorted_image_folders)
 
-def main():
-    """ Walk through all the dirs and subdirs and sort the files """
-    number_of_files: int = 0
+def process_files(file):
+    """ Based on the MIME-type, call different sorting functions """
     
-    for file in parent_dir.rglob("*"):
-        if file.is_file():
-            file_source = Path(file)
-            number_of_files += 1
-            
-            # try:
-            #     # Check if file type is an image
-            #     if mimetypes.guess_file_type(file_source)[0].split("/")[1] in image_formats:
-            #         with Image.open(file_source) as image:
-            #             file_date_obj: datetime = image_metadata_extractor(file_source, image)
-            #             move_file_to_year_folder(file_date_obj, file_source, file)
-            #     # check for video files
-            #     elif mimetypes.guess_file_type(file_source)[0] in video_mime_types:
-            #         file_date_obj = video_metadata_extractor(file_source)
-            #         move_file_to_year_folder(file_date_obj, file, file_source)
-            #     else:
-            #         handle_unknown_files(file_source, file)
-            # except Exception:
-            #     handle_unknown_files(file, file_source)
+    source_file = Path(file)                        
+    file_mime_type, _ = mimetypes.guess_type(source_file)
+    
+    try:
+        # Check if file type is an image
+        if file_mime_type and file_mime_type.startswith("image/"):
+            with Image.open(source_file) as image:
+                file_date_obj: datetime = image_metadata_extractor(source_file, image)
+                move_file_to_year_folder(file, source_file, file_date_obj)
+        # check for video files
+        elif file_mime_type in video_mime_types:
+            file_date_obj = video_metadata_extractor(source_file)
+            move_file_to_year_folder(file, source_file, file_date_obj)
+        elif file_mime_type in audio_mime_types:
+            file_date_obj = audio_metadata_extractor(source_file)
+            move_file_to_year_folder(file, source_file, file_date_obj)
+        else:
+            handle_unknown_files(file, source_file)
+    except UnidentifiedImageError as e:
+        handle_unknown_files(file, source_file)
+    except Exception as e:
+        handle_unknown_files(file, source_file)
+    
+def main():
+    files = list(parent_dir.rglob("*"))
+    number_of_files = len(files)
+    
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        executor.map(process_files, files)
     
     print(f"Number of files identified: {number_of_files}")
+    print(f"Number of unknown files: {number_of_unknown_files}")
     print(f"Number of files transferred: {number_of_files_transferred}")
+        
 
 if __name__ == "__main__":
     start_time = time.perf_counter()
