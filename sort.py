@@ -1,17 +1,13 @@
-from PIL import Image, UnidentifiedImageError, ExifTags
+from PIL import Image, UnidentifiedImageError
 from PIL.ExifTags import TAGS
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 import shutil
 import time
 import mimetypes
-import magic
-from mutagen import File
-from mutagen import MutagenError
 from concurrent.futures import ThreadPoolExecutor
 
 parent_dir = Path(r"C:\Users\herma\Desktop\Copy")
-magic_mime_type = magic.Magic(mime=True)
 
 video_mime_types = [
     "video/mp4",         # MP4 (MPEG-4 Part 14)
